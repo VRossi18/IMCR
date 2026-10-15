@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: routing_db
       POSTGRES_USER: dev
@@ -39,6 +39,7 @@ services:
       # Só o worker classifica: a chave da API NÃO está aqui (a API não precisa dela).
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
       OLLAMA_URL: ${OLLAMA_URL:-http://host.containers.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-30000}
@@ -67,6 +68,7 @@ services:
       <<: *backend-env
       # Segredo só por ambiente (arquivo .env na raiz, ignorado pelo git); nunca em arquivo versionado.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

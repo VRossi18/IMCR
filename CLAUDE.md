@@ -21,13 +21,15 @@ Backend (`cd backend`):
 Full stack: the compose file is named `podman-compose.yaml`, so always pass `-f`:
 `podman compose -f podman-compose.yaml up -d --build` (postgres, redis, `app-backend` on :3000, `worker`). Rebuild `app-backend worker` after backend changes.
 
+CI (`.github/workflows/ci.yml`, Node 22): frontend runs lint → typecheck → test → build; backend runs typecheck → build → test against Postgres 18 and Redis service containers with `LLM_PROVIDER=fake`. Run the same sequence locally before pushing.
+
 ## Architecture
 
 **Message flow.** `POST /api/messages` inserts a `PENDING` row, publishes `message.created`, enqueues a BullMQ job (jobId = message id). The worker (`entrypoints/worker.ts` → `worker/processor.ts`) sets `PROCESSING`, calls the `LlmClassifier`, applies `routeSector` (confidence below `CONFIDENCE_THRESHOLD` → `HUMAN_REVIEW`), stores the result with the classifier name, then `COMPLETED`. Every state change is published on the Redis channel `imcr:events`; the API relays it to browsers over SSE (`/api/events`, event names `message.created` / `message.updated`, plus a named `ping` every 15 s). API and worker are separate processes sharing `src/`; only the worker needs LLM credentials.
 
 **Failure rules.** Jobs retry 3 times with exponential backoff. `shouldMarkFailed` marks `FAILED` when attempts are exhausted **or** the error is a BullMQ `UnrecoverableError` (the Anthropic adapter maps 400/401/403/404 to it); the worker's `failed` listener and the integration harness must use that same function.
 
-**LLM adapters** (`backend/src/llm/`): `LlmClassifier` interface (`name` is persisted in `messages.classifier` and exposed as DTO `model`); `fake` (keyword heuristic, default, used by tests/CI), `anthropic` (forced tool call whose input schema is derived from the Zod `ClassificationSchema`), `ollama`. Chosen by `LLM_PROVIDER`; the system prompt in `prompt.ts` defines the urgency/confidence scoring that drives routing, so change it together with `eval/cases.json`.
+**LLM adapters** (`backend/src/llm/`): `LlmClassifier` interface (`name` is persisted in `messages.classifier` and exposed as DTO `model`); `fake` (keyword heuristic, default, used by tests/CI), `anthropic` (forced tool call whose input schema is derived from the Zod `ClassificationSchema`), `gemini` (plain `fetch` against `v1beta/models/{model}:generateContent`, structured output via `generationConfig.responseSchema` derived from the same Zod schema), `ollama`. Chosen by `LLM_PROVIDER`; the system prompt in `prompt.ts` defines the urgency/confidence scoring that drives routing, so change it together with `eval/cases.json`.
 
 **Resolved vs status.** "Resolved" is `resolvedAt`, orthogonal to `status` (only `COMPLETED` messages can be resolved; resolve/reopen are idempotent POSTs). Frontend `columnFor` (`src/lib/sectors.ts`) is the single place mapping a message to a column: resolved → `RESOLVED`; `CRITICAL` sentiment or `HUMAN_REVIEW` sector → `URGENT`; unclassified → "Em triagem". A human correction (`correctedSector`) overrides the AI sector; AI accuracy = `1 - corrected / completed`.
 
@@ -36,6 +38,19 @@ Full stack: the compose file is named `podman-compose.yaml`, so always pass `-f`
 **Frontend data layer.** Messages live in the TanStack Query cache (`messagesKey`), fed by both HTTP responses and SSE events through `applyEvent` (`hooks/useMessages.ts`). Updates arrive in no guaranteed order, so `applyEvent` never replaces a message with one of a lower status rank (PENDING < PROCESSING < COMPLETED/FAILED); do not bypass it. `lib/sse.ts` reopens the stream after 45 s without events and `useRealtime` refetches after a reconnect.
 
 **Mock mode.** `VITE_USE_MOCKS` defaults to on: MSW handlers + an in-memory simulator (`src/mocks/`) replace the backend, and `sse.ts` subscribes to the simulator directly instead of `EventSource`. `frontend/.env.development.local` sets it to `false` to use the real backend.
+
+## Production (Railway)
+
+Dev uses the compose stack; production runs on Railway (project `triagem`, environment `production`): Postgres and Redis plus three services that have no GitHub source. There is no `railway.toml` (Config as Code is deprecated by Railway).
+
+**Deploy is done by GitHub Actions**, not by Railway's GitHub integration: the `deploy` job in `ci.yml` runs only on push to `main`, after the frontend and backend jobs pass, and calls `railway up <dir> --path-as-root --service <name> --ci` in the order api → worker → frontend (secret `RAILWAY_TOKEN`, a Project Token for `production`). `--path-as-root` uploads only `backend/` or `frontend/`, so no Root Directory is set in Railway. Do not connect a repo to the services, or every push deploys twice.
+
+- `api`: variable `RAILWAY_DOCKERFILE_PATH=Containerfile` (Railway only auto-detects a file named `Dockerfile`), healthcheck path `/health`, public domain. Migrations run at startup.
+- `worker`: same Containerfile, custom start command `node dist/entrypoints/worker.js`, no public domain, healthcheck off. Deploy it after `api` has migrated. Only this service gets the active LLM provider's API key (currently `GEMINI_API_KEY`, production runs `LLM_PROVIDER=gemini`); `ANTHROPIC_API_KEY` is only needed if switching back to `anthropic`.
+- `frontend`: `frontend/Containerfile` (Vite build, then nginx serving `dist` with SPA fallback on `$PORT`). `VITE_API_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}` and `VITE_USE_MOCKS=false` are service variables, consumed as build args.
+- Healthcheck path and start command are set through the GraphQL API (`railway api`, mutation `serviceInstanceUpdate`), because the CLI has no command for them.
+- Variables on `api` and `worker`: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `REDIS_URL=${{Redis.REDIS_URL}}`, `LLM_PROVIDER`. On `api`, `CORS_ORIGIN=https://${{frontend.RAILWAY_PUBLIC_DOMAIN}}`. Railway injects `PORT`, which `config.ts` already reads. Use the exact service names in the references.
+- Railway Postgres has no pooler, so there is a single `DATABASE_URL`. `DB_POOL_MAX` caps the pool per process.
 
 ## Gotchas
 
