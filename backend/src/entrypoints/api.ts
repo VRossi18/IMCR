@@ -6,7 +6,7 @@ import { createClassifyQueue } from '../queue/classify.queue.js'
 import { createMessagesRepo } from '../repo/messages.js'
 
 const config = loadConfig(process.env, { requireLlm: false })
-const { db, sql } = createDb(config.DATABASE_URL)
+const { db, sql } = createDb(config.DATABASE_URL, config.DB_POOL_MAX)
 await runMigrations(db)
 
 const bus = createRedisBus(config.REDIS_URL)

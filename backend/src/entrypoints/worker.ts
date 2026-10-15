@@ -9,7 +9,7 @@ import { markFailed, processMessage, shouldMarkFailed } from '../worker/processo
 
 const config = loadConfig()
 // As migrações rodam na API; o worker só precisa do banco já migrado.
-const { db, sql } = createDb(config.DATABASE_URL)
+const { db, sql } = createDb(config.DATABASE_URL, config.DB_POOL_MAX)
 const classifier = createClassifier(config)
 const deps = {
   repo: createMessagesRepo(db),

@@ -1,0 +1,16 @@
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+# Variáveis VITE_* são embutidas no bundle em tempo de build.
+ARG VITE_API_URL
+ARG VITE_USE_MOCKS=false
+ENV VITE_API_URL=$VITE_API_URL VITE_USE_MOCKS=$VITE_USE_MOCKS
+RUN npm run build
+
+FROM nginx:alpine
+# A imagem aplica envsubst nos templates na partida; o Railway injeta PORT.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080

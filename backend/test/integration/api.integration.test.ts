@@ -9,6 +9,8 @@ import { ORIGIN, list, openSse, patch, poll, post, servicesUp, startHarness, typ
 // Requer Postgres e Redis: podman compose -f podman-compose.yaml up -d postgres redis
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
 const up = await servicesUp()
+// No CI os serviços são obrigatórios: pular aqui daria um verde falso.
+if (!up && process.env.CI) throw new Error('Postgres/Redis indisponíveis: os testes de integração não podem ser pulados no CI')
 
 const fake = new FakeClassifier()
 let behavior: (text: string) => Promise<ClassificationResult> = (t) => fake.classify(t)
