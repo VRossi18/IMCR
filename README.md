@@ -11,6 +11,7 @@
 [![Fastify](https://img.shields.io/badge/fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![Vite](https://img.shields.io/badge/vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/tailwind-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Deploy](https://img.shields.io/badge/deploy-Railway-0B0D0E?logo=railway&logoColor=white)](https://railway.com/)
 
 </div>
@@ -147,6 +148,10 @@ A produção roda no **Railway** (Postgres, Redis, `api`, `worker` e `frontend`)
 - [Relatório de QA](.specs/qa-report.md)
 - [Estratégia de testes](.specs/testing.md)
 - [CLAUDE.md](CLAUDE.md) — guia de arquitetura e armadilhas para quem contribui
+
+## 📄 Licença
+
+Distribuído sob a licença [MIT](LICENSE).
 
 ## 📁 Estrutura
 
